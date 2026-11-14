@@ -3,7 +3,7 @@ import { useFio, update } from '../lib/store'
 import { uid, type TutorSession } from '../lib/types'
 import { sendPrompt } from '../lib/ai'
 import { Badge, Card, Empty, Markdown, Modal, ScreenHeader, TextField } from '../ui/components'
-import { IconAdd, IconSchool } from '../ui/icons'
+import { IconAdd, IconCheck, IconClose, IconSchool, IconTrash } from '../ui/icons'
 import { formatTimestampWeb } from '../lib/format'
 
 /**
@@ -23,6 +23,8 @@ export function TutorScreen() {
   const state = useFio()
   const [creating, setCreating] = useState(false)
   const [courseId, setCourseId] = useState('')
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
 
   const sessions = useMemo(() =>
     [...state.tutorSessions].sort((a, b) => b.loggedAtMillis - a.loggedAtMillis),
@@ -98,9 +100,38 @@ export function TutorScreen() {
       )}
 
       <Card title="Sessions">
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: -6 }}>
+          <button className="text-btn" onClick={() => { setSelectMode(!selectMode); setSelectedIds([]) }}>
+            {selectMode ? 'Done' : 'Select'}
+          </button>
+        </div>
+
+        {selectedIds.length > 0 && (
+          <div className="card elevated" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 0 }}>
+            <strong style={{ flex: 1 }}>{selectedIds.length} selected</strong>
+            <button className="text-btn" onClick={() => setSelectedIds(sessions.map((s) => s.id))}>All</button>
+            <button className="btn danger-text small" onClick={() => {
+              if (confirm(`Delete ${selectedIds.length} tutor session(s)? This cannot be undone.`)) {
+                const drop = new Set(selectedIds)
+                update((s) => ({ ...s, tutorSessions: s.tutorSessions.filter((x) => !drop.has(x.id)) }))
+                setSelectedIds([])
+                setSelectMode(false)
+              }
+            }}>
+              <IconTrash width={15} height={15} /> Delete
+            </button>
+            <button className="icon-btn" aria-label="Clear selection" onClick={() => setSelectedIds([])}>
+              <IconClose width={16} height={16} />
+            </button>
+          </div>
+        )}
+
         {sessions.length === 0 && <Empty>No tutor sessions yet. Tap + to try a question.</Empty>}
         {(courseId ? windowSessions.filter((s) => s.courseId === courseId) : windowSessions).map((s) => (
-          <SessionRow key={s.id} session={s} />
+          <SessionRow key={s.id} session={s}
+            selectMode={selectMode}
+            selected={selectedIds.includes(s.id)}
+            onToggle={() => setSelectedIds((cur) => cur.includes(s.id) ? cur.filter((x) => x !== s.id) : [...cur, s.id])} />
         ))}
         {courseId && windowSessions.filter((s) => s.courseId === courseId).length === 0 && (
           <Empty>Nothing in this chat window yet.</Empty>
@@ -112,21 +143,27 @@ export function TutorScreen() {
   )
 }
 
-function SessionRow({ session }: { session: TutorSession }) {
+function SessionRow({ session, selectMode, selected, onToggle }: {
+  session: TutorSession
+  selectMode: boolean
+  selected: boolean
+  onToggle: () => void
+}) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="row-item">
-      <div className="row-main" onClick={() => setOpen(!open)} style={{ cursor: 'pointer' }}>
+    <div className="row-item" style={{ borderRadius: 10, outline: selected ? '2px solid var(--accent-strong)' : undefined }}>
+      <div className="row-main" onClick={() => selectMode ? onToggle() : setOpen(!open)} style={{ cursor: 'pointer' }}>
         <div className="row-title">{session.questionPrompt.length > 60 ? `${session.questionPrompt.slice(0, 60)}…` : session.questionPrompt}</div>
         <div className="row-sub">
           {formatTimestampWeb(session.loggedAtMillis)}
           {session.recommendedRevision ? ` · ${session.recommendedRevision}` : ''}
         </div>
       </div>
+      {selected && <IconCheck width={16} height={16} style={{ color: 'var(--accent-strong)' }} />}
       <Badge tone={session.scorePercentage >= 70 ? 'success' : session.scorePercentage >= 40 ? 'warning' : 'danger'}>
         {session.scorePercentage}%
       </Badge>
-      {open && (
+      {open && !selectMode && (
         <div style={{ marginTop: 10, width: '100%' }}>
           <div className="card elevated">
             <div className="row-sub" style={{ fontWeight: 700 }}>Your answer</div>

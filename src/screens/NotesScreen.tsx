@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useFio, update } from '../lib/store'
 import { uid, type Note } from '../lib/types'
 import { Card, Empty, Markdown, Modal, ScreenHeader, TextField, Badge } from '../ui/components'
-import { IconAdd, IconNote, IconTrash } from '../ui/icons'
+import { IconAdd, IconCheck, IconClose, IconNote, IconTrash } from '../ui/icons'
 import { formatDateWeb } from '../lib/format'
 
 export function NotesScreen() {
@@ -11,6 +11,9 @@ export function NotesScreen() {
   const [openId, setOpenId] = useState<string | null>(null)
   const [folderFilter, setFolderFilter] = useState('All')
   const [query, setQuery] = useState('')
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [moveDialog, setMoveDialog] = useState(false)
 
   const folders = useMemo(() =>
     ['All', ...state.noteFolders], [state.noteFolders])
@@ -26,6 +29,29 @@ export function NotesScreen() {
   }, [state.notes, folderFilter, query])
 
   const open = openId ? state.notes.find((n) => n.id === openId) : null
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((cur) => cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id])
+  }
+
+  const bulkDelete = () => {
+    if (!confirm(`Delete ${selectedIds.length} note(s)? This cannot be undone.`)) return
+    const drop = new Set(selectedIds)
+    update((s) => ({ ...s, notes: s.notes.filter((n) => !drop.has(n.id)) }))
+    setSelectedIds([])
+    setSelectMode(false)
+  }
+
+  const bulkMove = (folder: string) => {
+    const ids = new Set(selectedIds)
+    update((s) => ({
+      ...s,
+      noteFolders: folder && !s.noteFolders.includes(folder) ? [...s.noteFolders, folder] : s.noteFolders,
+      notes: s.notes.map((n) => ids.has(n.id) ? { ...n, folder, updatedAtMillis: Date.now() } : n)
+    }))
+    setSelectedIds([])
+    setMoveDialog(false)
+  }
 
   return (
     <div className="screen">
@@ -53,28 +79,68 @@ export function NotesScreen() {
       </Card>
 
       <Card>
-        {notes.length === 0 && <Empty>{query ? 'No matching notes.' : 'No notes yet. Tap + to write one.'}</Empty>}
-        {notes.map((n) => (
-          <div className="row-item" key={n.id}>
-            <div className="row-main" onClick={() => setOpenId(n.id)} style={{ cursor: 'pointer' }}>
-              <div className="row-title">{n.title || 'Untitled'}</div>
-              <div className="row-sub">
-                {formatDateWeb(n.updatedAtMillis)}
-                {n.folder ? ` · ${n.folder}` : ''}
-                {n.tags.length ? ` · ${n.tags.join(', ')}` : ''}
-              </div>
-            </div>
-            <button className="icon-btn" aria-label="Delete note"
-              onClick={() => {
-                if (confirm(`Delete "${n.title || 'Untitled'}"?`)) {
-                  update((s) => ({ ...s, notes: s.notes.filter((x) => x.id !== n.id) }))
-                }
-              }}>
-              <IconTrash width={18} height={18} />
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: -6 }}>
+          <button className="text-btn" onClick={() => { setSelectMode(!selectMode); setSelectedIds([]) }}>
+            {selectMode ? 'Done' : 'Select'}
+          </button>
+        </div>
+
+        {selectedIds.length > 0 && (
+          <div className="card elevated" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 0 }}>
+            <strong style={{ flex: 1 }}>{selectedIds.length} selected</strong>
+            <button className="text-btn" onClick={() => setSelectedIds(notes.map((n) => n.id))}>All</button>
+            <button className="btn small" onClick={() => setMoveDialog(true)}>Move</button>
+            <button className="btn danger-text small" onClick={bulkDelete}>
+              <IconTrash width={15} height={15} /> Delete
+            </button>
+            <button className="icon-btn" aria-label="Clear selection" onClick={() => setSelectedIds([])}>
+              <IconClose width={16} height={16} />
             </button>
           </div>
-        ))}
+        )}
+
+        {notes.length === 0 && <Empty>{query ? 'No matching notes.' : 'No notes yet. Tap + to write one.'}</Empty>}
+        {notes.map((n) => {
+          const isSelected = selectedIds.includes(n.id)
+          return (
+            <div className="row-item" key={n.id}
+              style={{ borderRadius: 10, outline: isSelected ? '2px solid var(--accent-strong)' : undefined }}>
+              <div className="row-main" style={{ cursor: 'pointer' }}
+                onClick={() => selectMode ? toggleSelected(n.id) : setOpenId(n.id)}>
+                <div className="row-title">{n.title || 'Untitled'}</div>
+                <div className="row-sub">
+                  {formatDateWeb(n.updatedAtMillis)}
+                  {n.folder ? ` · ${n.folder}` : ''}
+                  {n.tags.length ? ` · ${n.tags.join(', ')}` : ''}
+                </div>
+              </div>
+              {isSelected && <IconCheck width={16} height={16} style={{ color: 'var(--accent-strong)' }} />}
+              {!selectMode && (
+                <button className="icon-btn" aria-label="Delete note"
+                  onClick={() => {
+                    if (confirm(`Delete "${n.title || 'Untitled'}"?`)) {
+                      update((s) => ({ ...s, notes: s.notes.filter((x) => x.id !== n.id) }))
+                    }
+                  }}>
+                  <IconTrash width={18} height={18} />
+                </button>
+              )}
+            </div>
+          )
+        })}
       </Card>
+
+      {moveDialog && (
+        <Modal title={`Move ${selectedIds.length} note(s)`} onClose={() => setMoveDialog(false)}>
+          <div className="row-sub" style={{ marginTop: 0 }}>Choose a folder:</div>
+          <div className="chip-row">
+            <button className="chip" onClick={() => bulkMove('')}>Unfiled</button>
+            {state.noteFolders.map((f) => (
+              <button key={f} className="chip" onClick={() => bulkMove(f)}>{f}</button>
+            ))}
+          </div>
+        </Modal>
+      )}
 
       {creating && <NoteEditor note={null} onClose={() => setCreating(false)} />}
       {open && <NoteViewer note={open} onClose={() => setOpenId(null)} />}

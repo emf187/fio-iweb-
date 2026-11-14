@@ -54,6 +54,12 @@ export function Dashboard({ go }: { go: (s: Screen) => void }) {
           </Ring>
           <div style={{ flex: 1, display: 'grid', gap: 8 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.86rem' }}>
+              <span style={{ color: 'var(--text-2)' }}>Added today</span>
+              <strong className="mono-num" style={{ color: score.trend >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                {score.trend >= 0 ? '+' : ''}{score.trend}
+              </strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.86rem' }}>
               <span style={{ color: 'var(--text-2)' }}>Habits</span>
               <strong className="mono-num">{score.habitScore}</strong>
             </div>

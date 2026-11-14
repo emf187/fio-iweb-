@@ -159,6 +159,12 @@ export interface SessionLog {
   strikesUsed: number
   breaksTaken: number
   status: SessionStatus
+  /** Why the session ran: STUDY / LEISURE / RESEARCH (same sections as Study). */
+  sectionType: SectionType
+  /** Course id the session belonged to; '' when none. */
+  courseId: string
+  /** Free-text details the user typed for this session. */
+  details: string
   loggedAtMillis: number
 }
 
@@ -181,6 +187,8 @@ export interface GalleryMeta {
   fileName: string
   displayName: string
   mimeType: string
+  /** User-created folder name; '' when unfiled. */
+  folder: string
   addedAtMillis: number
 }
 
@@ -218,6 +226,10 @@ export interface TimerState {
   emergencyUsed: boolean
   finishedStatus: SessionStatus | null
   lastBreakMark: number
+  /** Purpose picked at setup; carried into the logged session. */
+  sectionType: SectionType
+  /** Course id for the session; '' when none. */
+  courseId: string
 }
 
 export const INITIAL_TIMER: TimerState = {
@@ -232,7 +244,9 @@ export const INITIAL_TIMER: TimerState = {
   breaksTaken: 0,
   emergencyUsed: false,
   finishedStatus: null,
-  lastBreakMark: -1
+  lastBreakMark: -1,
+  sectionType: 'STUDY',
+  courseId: ''
 }
 
 export interface FioState {
@@ -253,6 +267,8 @@ export interface FioState {
   sessionLogs: SessionLog[]
   chat: ChatMessage[]
   gallery: GalleryMeta[]
+  /** User-created gallery folder names (photos carry their folder). */
+  galleryFolders: string[]
   settings: AppSettings
   /** Progress-page featured habit stats: up to 3 habit ids, comma-separated. */
   habitStatsSelection: string
@@ -270,6 +286,8 @@ export interface GalleryPhoto {
   id: string
   displayName: string
   mimeType: string
+  /** User-created folder name; '' when unfiled. */
+  folder: string
   addedAtMillis: number
 }
 
@@ -318,6 +336,7 @@ export function emptyState(): FioState {
     sessionLogs: [],
     chat: [],
     gallery: [],
+    galleryFolders: [],
     settings: { ...DEFAULT_SETTINGS },
     habitStatsSelection: '',
     photos: [],

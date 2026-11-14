@@ -1,5 +1,5 @@
 import { getState, update } from './store'
-import { INITIAL_TIMER, uid, type SessionLog, type SessionStatus, type TimerState } from './types'
+import { INITIAL_TIMER, uid, type SectionType, type SessionLog, type SessionStatus, type TimerState } from './types'
 
 /**
  * Focus timer, web edition. Same model as the Android FocusTimer singleton:
@@ -16,7 +16,8 @@ import { INITIAL_TIMER, uid, type SessionLog, type SessionStatus, type TimerStat
 export type { TimerPhase, TimerState } from './types'
 
 export function getTimer(s: { timer?: TimerState }): TimerState {
-  return s.timer ?? INITIAL_TIMER
+  // Old stored timers predate sectionType/courseId — fill defaults.
+  return { ...INITIAL_TIMER, ...(s.timer ?? {}) }
 }
 
 export function timerRunning(t: TimerState): boolean {
@@ -27,7 +28,13 @@ function setTimer(fn: (t: TimerState) => TimerState): void {
   update((s) => ({ ...s, timer: fn(getTimer(s)) }))
 }
 
-export function startTimer(minutes: number, breakFreqMinutes: number, breakDurationMinutes: number): void {
+export function startTimer(
+  minutes: number,
+  breakFreqMinutes: number,
+  breakDurationMinutes: number,
+  sectionType: SectionType = 'STUDY',
+  courseId = ''
+): void {
   const now = Date.now()
   setTimer(() => ({
     ...INITIAL_TIMER,
@@ -36,7 +43,9 @@ export function startTimer(minutes: number, breakFreqMinutes: number, breakDurat
     focusEndsAt: now + minutes * 60_000,
     breakFreqMinutes: Math.max(1, breakFreqMinutes),
     breakDurationMinutes: Math.max(1, breakDurationMinutes),
-    lastBreakMark: -1
+    lastBreakMark: -1,
+    sectionType,
+    courseId
   }))
 }
 
@@ -135,6 +144,9 @@ function finishTimer(status: SessionStatus, actualMinutes: number): void {
     strikesUsed: 0,
     breaksTaken: cur.breaksTaken,
     status,
+    sectionType: cur.sectionType,
+    courseId: cur.courseId,
+    details: '',
     loggedAtMillis: Date.now()
   }
   update((s) => ({
@@ -147,4 +159,29 @@ function finishTimer(status: SessionStatus, actualMinutes: number): void {
       finishedStatus: status
     }
   }))
+}
+
+/** Edits a logged focus session (purpose / course / typed details). */
+export function updateSessionLog(
+  id: string,
+  patch: Partial<Pick<SessionLog, 'sectionType' | 'courseId' | 'details'>>
+): void {
+  update((s) => ({
+    ...s,
+    sessionLogs: s.sessionLogs.map((log) => log.id === id
+      ? {
+          ...log,
+          sectionType: patch.sectionType ?? log.sectionType ?? 'STUDY',
+          courseId: patch.courseId ?? log.courseId ?? '',
+          details: patch.details !== undefined ? patch.details.slice(0, 400) : (log.details ?? '')
+        }
+      : log)
+  }))
+}
+
+/** Bulk delete for selected focus logs. */
+export function deleteSessionLogs(ids: string[]): void {
+  if (ids.length === 0) return
+  const drop = new Set(ids)
+  update((s) => ({ ...s, sessionLogs: s.sessionLogs.filter((log) => !drop.has(log.id)) }))
 }

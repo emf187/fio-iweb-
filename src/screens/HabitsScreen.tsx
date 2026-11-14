@@ -8,6 +8,7 @@ import { Badge, Card, Empty, Modal, ScreenHeader, Switch, TextField, NumberField
 import { IconAdd, IconChart, IconFlame, IconRepeat, IconTrash } from '../ui/icons'
 import { dateKey } from '../lib/dates'
 import { HabitDetail } from './HabitDetail'
+import { FocusStatsCard } from '../ui/FocusStats'
 
 export function HabitsScreen() {
   const state = useFio()
@@ -100,6 +101,9 @@ export function HabitsScreen() {
           )
         })}
       </Card>
+
+      {/* Focus timer stats — same card as the Focus screen; feeds Life Score. */}
+      <FocusStatsCard />
 
       {archived.length > 0 && (
         <Card title={`Archived (${archived.length})`} icon={<IconChart width={16} height={16} />}>

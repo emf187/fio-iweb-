@@ -105,7 +105,9 @@ export function exportBackup(state: FioState): string {
       id: s.id, title: s.title, plannedMinutes: s.plannedMinutes,
       actualMinutes: s.actualMinutes, isLockdownEnabled: s.isLockdownEnabled,
       startingStrikes: s.startingStrikes, strikesUsed: s.strikesUsed,
-      breaksTaken: s.breaksTaken, status: s.status, loggedAtMillis: s.loggedAtMillis
+      breaksTaken: s.breaksTaken, status: s.status,
+      sectionType: s.sectionType ?? 'STUDY', courseId: s.courseId ?? '', details: s.details ?? '',
+      loggedAtMillis: s.loggedAtMillis
     })),
     chat: state.chat.map((c) => ({
       id: c.id, sender: c.sender, text: c.text, courseId: c.courseId,
@@ -129,8 +131,9 @@ export function exportBackup(state: FioState): string {
     },
     gallery: state.gallery.map((g) => ({
       id: g.id, fileName: g.fileName, displayName: g.displayName,
-      mimeType: g.mimeType, addedAtMillis: g.addedAtMillis
+      mimeType: g.mimeType, folder: g.folder ?? '', addedAtMillis: g.addedAtMillis
     })),
+    galleryFolders: state.galleryFolders ?? [],
     habitStatsSelection: state.habitStatsSelection,
     ...state.extras
   }
@@ -174,8 +177,8 @@ function stateFromBackup(raw: Record<string, unknown>): FioState {
   const known = new Set([
     'version', 'exportedAt', 'profileName', 'events', 'timetable', 'habits', 'goals',
     'courses', 'documents', 'notes', 'noteFolders', 'sleep', 'meals', 'flashcards',
-    'tutorSessions', 'sessionLogs', 'chat', 'settings', 'gallery', 'pendingSleepStart',
-    'habitStatsSelection'
+    'tutorSessions', 'sessionLogs', 'chat', 'settings', 'gallery', 'galleryFolders',
+    'pendingSleepStart', 'habitStatsSelection'
   ])
   const extras: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(raw)) {
@@ -300,6 +303,9 @@ function stateFromBackup(raw: Record<string, unknown>): FioState {
         startingStrikes: num(o.startingStrikes), strikesUsed: num(o.strikesUsed),
         breaksTaken: num(o.breaksTaken),
         status: str(o.status, 'COMPLETED') as FioState['sessionLogs'][number]['status'],
+        sectionType: str(o.sectionType, 'STUDY') as FioState['sessionLogs'][number]['sectionType'],
+        courseId: str(o.courseId),
+        details: str(o.details),
         loggedAtMillis: num(o.loggedAtMillis)
       }
     }),
@@ -317,9 +323,10 @@ function stateFromBackup(raw: Record<string, unknown>): FioState {
       const o = obj(g)
       return {
         id: str(o.id) || uid(), fileName: str(o.fileName), displayName: str(o.displayName),
-        mimeType: str(o.mimeType), addedAtMillis: num(o.addedAtMillis)
+        mimeType: str(o.mimeType), folder: str(o.folder), addedAtMillis: num(o.addedAtMillis)
       }
     }),
+    galleryFolders: arr(raw.galleryFolders).map(String),
     habitStatsSelection: str(raw.habitStatsSelection, ''),
     photos: base.photos,
     extras,
@@ -378,6 +385,7 @@ export function mergeBackup(local: FioState, json: string): FioState | null {
     chat: mergeById(local.chat, incoming.chat, (x) => x.timestampMillis),
     settings: incoming.settings.aiApiKey ? incoming.settings : local.settings,
     gallery: mergeById(local.gallery, incoming.gallery, (x) => x.addedAtMillis),
+    galleryFolders: unionStrings(local.galleryFolders ?? [], incoming.galleryFolders ?? []),
     habitStatsSelection: local.habitStatsSelection || incoming.habitStatsSelection,
     photos: local.photos,
     extras: { ...incoming.extras, ...local.extras },
