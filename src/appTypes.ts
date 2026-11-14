@@ -1,0 +1,15 @@
+/** Screen ids — same set and order as the Android FioScreen enum. */
+export type Screen =
+  | 'DASHBOARD'
+  | 'CALENDAR'
+  | 'TIMETABLE'
+  | 'STUDY'
+  | 'TUTOR'
+  | 'CALCULATOR'
+  | 'TIMER'
+  | 'NOTES'
+  | 'GALLERY'
+  | 'HEALTH'
+  | 'HABITS'
+  | 'STATS'
+  | 'SETTINGS'
