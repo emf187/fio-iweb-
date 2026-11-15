@@ -129,9 +129,25 @@ export function exportBackup(state: FioState): string {
       mealTargetCount: state.settings.mealTargetCount,
       showAiImages: state.settings.showAiImages
     },
-    gallery: state.gallery.map((g) => ({
+    // Photos travel as metadata only — the bytes live in IndexedDB on each
+    // device (same split as Android, whose files ride with device transfer).
+    // Web-imported photos join the Android-compatible gallery list so they
+    // survive restores on both platforms.
+    gallery: [
+      ...state.gallery,
+      ...state.photos
+        .filter((p) => !state.gallery.some((g) => g.id === p.id))
+        .map((p) => ({
+          id: p.id, fileName: p.displayName, displayName: p.displayName,
+          mimeType: p.mimeType, folder: p.folder, addedAtMillis: p.addedAtMillis
+        }))
+    ].map((g) => ({
       id: g.id, fileName: g.fileName, displayName: g.displayName,
       mimeType: g.mimeType, folder: g.folder ?? '', addedAtMillis: g.addedAtMillis
+    })),
+    photos: state.photos.map((p) => ({
+      id: p.id, displayName: p.displayName, mimeType: p.mimeType,
+      folder: p.folder, addedAtMillis: p.addedAtMillis
     })),
     galleryFolders: state.galleryFolders ?? [],
     habitStatsSelection: state.habitStatsSelection,
@@ -178,7 +194,7 @@ function stateFromBackup(raw: Record<string, unknown>): FioState {
     'version', 'exportedAt', 'profileName', 'events', 'timetable', 'habits', 'goals',
     'courses', 'documents', 'notes', 'noteFolders', 'sleep', 'meals', 'flashcards',
     'tutorSessions', 'sessionLogs', 'chat', 'settings', 'gallery', 'galleryFolders',
-    'pendingSleepStart', 'habitStatsSelection'
+    'pendingSleepStart', 'habitStatsSelection', 'photos'
   ])
   const extras: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(raw)) {
@@ -330,7 +346,14 @@ function stateFromBackup(raw: Record<string, unknown>): FioState {
     }),
     galleryFolders: arr(raw.galleryFolders).map(String),
     habitStatsSelection: str(raw.habitStatsSelection, ''),
-    photos: base.photos,
+    photos: arr(raw.photos).map((p) => {
+      const o = obj(p)
+      return {
+        id: str(o.id) || uid(), displayName: str(o.displayName),
+        mimeType: str(o.mimeType), folder: str(o.folder),
+        addedAtMillis: num(o.addedAtMillis)
+      }
+    }),
     extras,
     updatedAt: Date.now()
   }
@@ -390,7 +413,8 @@ export function mergeBackup(local: FioState, json: string): FioState | null {
     gallery: mergeById(local.gallery, incoming.gallery, (x) => x.addedAtMillis),
     galleryFolders: unionStrings(local.galleryFolders ?? [], incoming.galleryFolders ?? []),
     habitStatsSelection: local.habitStatsSelection || incoming.habitStatsSelection,
-    photos: local.photos,
+    // Photo metadata unions by id; bytes stay wherever they were stored.
+    photos: [...local.photos, ...incoming.photos.filter((p) => !local.photos.some((q) => q.id === p.id))],
     extras: { ...incoming.extras, ...local.extras },
     updatedAt: Date.now()
   }

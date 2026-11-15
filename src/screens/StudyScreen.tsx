@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFio, update } from '../lib/store'
 import { uid, type ChatMessage, type DocumentItem, type Flashcard } from '../lib/types'
 import { sendPrompt } from '../lib/ai'
@@ -31,7 +31,7 @@ export function StudyScreen() {
   const [cardCreating, setCardCreating] = useState(false)
   const [readingDoc, setReadingDoc] = useState<DocumentItem | null>(null)
   const [importingBooks, setImportingBooks] = useState(false)
-  const bookInputRef = useRef<HTMLInputElement>(null)
+  const [bookNote, setBookNote] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const effectiveCourse = courseId || state.courses[0]?.id || ''
@@ -95,21 +95,26 @@ export function StudyScreen() {
   const cards = state.flashcards.filter((f) => f.courseId === effectiveCourse)
 
   // Import course books (PDF/EPUB/TXT/MD) into the selected course.
-  const importFiles = async (e: ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    e.target.value = ''
-    if (!files || files.length === 0 || !effectiveCourse) return
+  // Snapshot the picked files first — clearing input.value empties the live
+  // FileList, which silently imported nothing before.
+  const importFiles = async (picked: File[]) => {
+    if (picked.length === 0 || !effectiveCourse) return
     setImportingBooks(true)
+    setBookNote('')
     const added: DocumentItem[] = []
-    for (const file of Array.from(files)) {
+    let failed = 0
+    for (const file of picked) {
       try {
         added.push(await importBook(effectiveCourse, file))
       } catch {
-        /* unreadable file — skip it */
+        failed += 1
       }
     }
     if (added.length > 0) update((s) => ({ ...s, documents: [...s.documents, ...added] }))
     setImportingBooks(false)
+    if (added.length === 0) setBookNote('Import failed — the file could not be read')
+    else if (failed > 0) setBookNote(`Imported ${added.length} · ${failed} failed`)
+    else setBookNote(`Imported ${added.length} book${added.length === 1 ? '' : 's'}`)
   }
 
   const removeDoc = (d: DocumentItem) => {
@@ -261,18 +266,18 @@ export function StudyScreen() {
               </div>
             ))}
             <div className="btn-row">
-              <button className="btn" onClick={() => bookInputRef.current?.click()} disabled={importingBooks}>
+              <label className="btn" style={{ cursor: 'pointer', opacity: importingBooks ? 0.6 : 1 }}>
                 <IconAdd width={15} height={15} /> {importingBooks ? 'Importing…' : 'Import books'}
-              </button>
+                <input
+                  type="file"
+                  accept=".pdf,.epub,.txt,.md,.markdown,application/pdf,application/epub+zip,text/plain,text/markdown"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={(e) => { void importFiles(Array.from(e.target.files ?? [])); e.target.value = '' }}
+                />
+              </label>
             </div>
-            <input
-              ref={bookInputRef}
-              type="file"
-              accept=".pdf,.epub,.txt,.md,.markdown,application/pdf,application/epub+zip,text/plain,text/markdown"
-              multiple
-              hidden
-              onChange={(e) => void importFiles(e)}
-            />
+            {bookNote && <div className="row-sub" style={{ textAlign: 'center' }}>{bookNote}</div>}
           </Card>
 
           <CourseAdder onAdded={() => {}} />

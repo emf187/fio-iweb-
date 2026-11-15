@@ -276,7 +276,7 @@ export interface FioState {
   habitStatsSelection: string
   /** Running focus session (absent = IDLE). */
   timer?: TimerState
-  /** Photos live outside the JSON backup (files in IndexedDB). */
+  /** Photos: files live in IndexedDB, metadata travels in backups (bytes never do). */
   photos: GalleryPhoto[]
   /** Any backup keys this build doesn't know, preserved for round-trips. */
   extras: Record<string, unknown>

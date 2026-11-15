@@ -357,12 +357,14 @@ function PhotoTile({ photo, selected, selecting, onToggleSelect, onOpen, onDelet
   onRename: () => void
 }) {
   const [url, setUrl] = useState<string | null>(null)
+  const [missing, setMissing] = useState(false)
   useEffect(() => {
     let active = true
     let objectUrl: string | null = null
     void (async () => {
       const blob = await getPhoto(photo.id)
-      if (!active || !blob) return
+      if (!active) return
+      if (!blob) { setMissing(true); return }
       objectUrl = URL.createObjectURL(blob)
       setUrl(objectUrl)
     })()
@@ -380,7 +382,11 @@ function PhotoTile({ photo, selected, selecting, onToggleSelect, onOpen, onDelet
       borderRadius: 14
     }}>
       <button className="photo-tile" onClick={onOpen} aria-label={`Open ${photo.displayName}`}>
-        {url ? <img src={url} alt={photo.displayName} loading="lazy" /> : <span className="empty" style={{ padding: 4 }}>…</span>}
+        {url
+          ? <img src={url} alt={photo.displayName} loading="lazy" />
+          : <span className="empty" style={{ padding: 4, fontSize: '0.6rem', lineHeight: 1.4 }}>
+              {missing ? '📷\nnot on this device' : '…'}
+            </span>}
       </button>
 
       <button
@@ -420,13 +426,15 @@ function PhotoViewer({ id, onClose }: { id: string; onClose: () => void }) {
   const state = useFio()
   const photo = state.photos.find((p) => p.id === id)
   const [url, setUrl] = useState<string | null>(null)
+  const [missing, setMissing] = useState(false)
 
   useEffect(() => {
     let active = true
     let objectUrl: string | null = null
     void (async () => {
       const blob = await getPhoto(id)
-      if (!active || !blob) return
+      if (!active) return
+      if (!blob) { setMissing(true); return }
       objectUrl = URL.createObjectURL(blob)
       setUrl(objectUrl)
     })()
@@ -448,7 +456,7 @@ function PhotoViewer({ id, onClose }: { id: string; onClose: () => void }) {
     <Modal title={photo.displayName} onClose={onClose}>
       {url
         ? <img src={url} alt={photo.displayName} style={{ width: '100%', borderRadius: 14, display: 'block' }} />
-        : <Empty>Loading…</Empty>}
+        : <Empty>{missing ? 'The picture file is not on this device — photos restored from a backup carry names only. Re-add it here to view it.' : 'Loading…'}</Empty>}
       <div className="row-sub" style={{ marginTop: 8 }}>
         Added {formatTimestampWeb(photo.addedAtMillis)} · {photo.mimeType}{photo.folder ? ` · ${photo.folder}` : ''}
       </div>
