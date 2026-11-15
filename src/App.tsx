@@ -10,6 +10,7 @@ import {
 } from './ui/icons'
 import type { Screen } from './appTypes'
 import { Dashboard } from './screens/Dashboard'
+import { OnboardingScreen } from './screens/OnboardingScreen'
 import { CalendarScreen } from './screens/CalendarScreen'
 import { TimetableScreen } from './screens/TimetableScreen'
 import { StudyScreen } from './screens/StudyScreen'
@@ -79,7 +80,10 @@ export function App() {
       fontScale={state.settings.fontScale}
       reduceMotion={state.settings.reduceMotion}
     >
-      <div className="app-shell">
+      {!state.setupDone ? (
+        <OnboardingScreen />
+      ) : (
+        <div className="app-shell">
         <header className="topbar">
           <button className="icon-btn" onClick={() => setDrawerOpen(true)} aria-label="Open menu">
             <IconMenu />
@@ -150,7 +154,8 @@ export function App() {
             Update ready — tap to refresh
           </button>
         )}
-      </div>
+        </div>
+      )}
     </FioTheme>
   )
 }

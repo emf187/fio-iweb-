@@ -251,6 +251,8 @@ export const INITIAL_TIMER: TimerState = {
 
 export interface FioState {
   profileName: string
+  /** Guided first-run setup (name + AI key) is complete. */
+  setupDone: boolean
   events: ScheduleEvent[]
   timetable: TimetableItem[]
   habits: Habit[]
@@ -320,6 +322,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 export function emptyState(): FioState {
   return {
     profileName: '',
+    setupDone: false,
     events: [],
     timetable: [],
     habits: [],

@@ -187,6 +187,8 @@ function stateFromBackup(raw: Record<string, unknown>): FioState {
   return {
     ...base,
     profileName: str(raw.profileName, ''),
+    // A restored backup counts as a completed setup.
+    setupDone: true,
     events: arr(raw.events).map((e) => {
       const o = obj(e)
       return {
@@ -360,6 +362,7 @@ export function mergeBackup(local: FioState, json: string): FioState | null {
   return {
     ...incoming,
     profileName: local.profileName || incoming.profileName,
+    setupDone: true,
     events: mergeById(local.events, incoming.events, (x) => x.editedAtMillis > 0 ? x.editedAtMillis : x.loggedAtMillis,
       (a, b) => ({ ...a, description: a.description || b.description })),
     timetable: mergeById(local.timetable, incoming.timetable, () => 0),

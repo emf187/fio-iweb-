@@ -35,7 +35,9 @@ export async function loadState(): Promise<void> {
   loaded = true
   const doc = await readDoc<Partial<FioState>>()
   if (doc) {
-    state = { ...emptyState(), ...doc } as FioState
+    // setupDone defaults true for pre-onboarding saves: only fresh installs
+    // (null doc) and states saved during setup carry the explicit false.
+    state = { ...emptyState(), setupDone: true, ...doc } as FioState
   }
   emit()
 }
