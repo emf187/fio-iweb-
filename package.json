@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --port 4173",
-    "icons": "node scripts/icons.mjs"
+    "icons": "node scripts/icons.mjs",
+    "audio": "node scripts/analyze-audio.mjs"
   },
   "dependencies": {
     "epubjs": "^0.3.93",
