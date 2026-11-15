@@ -1,7 +1,7 @@
 // Records the landing.html #solo demo (the animated app phone) straight to a
 // video file, using the locally installed Chrome in headless mode.
 //
-//   node scripts/record-demo.mjs [--seconds 38] [--hash solo|clip] [--out ../fio-demo.webm]
+//   node scripts/record-demo.mjs [--seconds 38] [--hash solo|clip] [--p2 ms] [--p3 ms] [--out ../fio-demo.webm]
 //
 // #solo (default) records the phone demo cycle. #clip records the short
 // brand clip — eye + name blink, API key steps, platforms card — whose
@@ -47,7 +47,12 @@ try {
   await new Promise((r) => setTimeout(r, pre))
   // Clip mode drives its own timeline — arm it right before capture so the
   // recording catches the very first frame of the fade-in.
-  if (hash === 'clip') await page.evaluate(() => window.__startClip?.())
+  if (hash === 'clip') {
+    // Timings in ms — lets the music's drops drive the transitions.
+    const p2 = Number(getArg('--p2', '5000'))
+    const p3 = Number(getArg('--p3', '11500'))
+    await page.evaluate((a, b) => window.__startClip?.({ p2: a, p3: b }), p2, p3)
+  }
 
   const recorder = await page.screencast({ path: out })
   console.log(`recording ${seconds}s -> ${out}`)
