@@ -23,6 +23,8 @@
  *
  * Requires ffmpeg on PATH (winget install Gyan.FFmpeg) — the same dependency
  * the recorder needs, because Chrome's screencast encoder shells out to it.
+ *
+ * Standalone home: https://github.com/emf187/audio-skimmer
  */
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
