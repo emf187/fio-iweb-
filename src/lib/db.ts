@@ -1,14 +1,17 @@
 const DB_NAME = 'fio-web'
 const STORE = 'kv'
 const PHOTO_STORE = 'photos'
+const DOC_STORE = 'docs'
 const KEY = 'state'
+const DB_VERSION = 3
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 2)
+    const req = indexedDB.open(DB_NAME, DB_VERSION)
     req.onupgradeneeded = () => {
       if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE)
       if (!req.result.objectStoreNames.contains(PHOTO_STORE)) req.result.createObjectStore(PHOTO_STORE)
+      if (!req.result.objectStoreNames.contains(DOC_STORE)) req.result.createObjectStore(DOC_STORE)
     }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
@@ -105,6 +108,55 @@ export async function deletePhoto(id: string): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(PHOTO_STORE, 'readwrite')
       tx.objectStore(PHOTO_STORE).delete(id)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+    })
+    db.close()
+  } catch {
+    /* ignore */
+  }
+}
+
+// ------------------------------------------------ book files (original bytes)
+
+/** Stores the original PDF/EPUB/TXT/MD file for a course book. */
+export async function putDoc(id: string, blob: Blob): Promise<void> {
+  try {
+    const db = await openDb()
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(DOC_STORE, 'readwrite')
+      tx.objectStore(DOC_STORE).put(blob, id)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+    })
+    db.close()
+  } catch {
+    /* book storage is best-effort; the reader falls back to extracted text */
+  }
+}
+
+export async function getDoc(id: string): Promise<Blob | null> {
+  try {
+    const db = await openDb()
+    const blob = await new Promise<Blob | null>((resolve, reject) => {
+      const tx = db.transaction(DOC_STORE, 'readonly')
+      const req = tx.objectStore(DOC_STORE).get(id)
+      req.onsuccess = () => resolve((req.result as Blob) ?? null)
+      req.onerror = () => reject(req.error)
+    })
+    db.close()
+    return blob
+  } catch {
+    return null
+  }
+}
+
+export async function deleteDoc(id: string): Promise<void> {
+  try {
+    const db = await openDb()
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(DOC_STORE, 'readwrite')
+      tx.objectStore(DOC_STORE).delete(id)
       tx.oncomplete = () => resolve()
       tx.onerror = () => reject(tx.error)
     })

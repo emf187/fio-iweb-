@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { useFio, update } from '../lib/store'
-import { uid, type ChatMessage, type Flashcard } from '../lib/types'
+import { uid, type ChatMessage, type DocumentItem, type Flashcard } from '../lib/types'
 import { sendPrompt } from '../lib/ai'
+import { importBook, deleteBookFile } from '../lib/docs'
 import { Badge, Card, Empty, Markdown, Modal, ScreenHeader, TextField } from '../ui/components'
-import { IconAdd, IconBook, IconSend } from '../ui/icons'
+import { IconAdd, IconBook, IconSend, IconTrash } from '../ui/icons'
+import { BookReader } from '../ui/BookReader'
 import { formatTimeWeb, formatTimestampWeb } from '../lib/format'
 
 /**
@@ -27,6 +29,9 @@ export function StudyScreen() {
   const [flashMode, setFlashMode] = useState(false)
   const [cardEditing, setCardEditing] = useState<Flashcard | null>(null)
   const [cardCreating, setCardCreating] = useState(false)
+  const [readingDoc, setReadingDoc] = useState<DocumentItem | null>(null)
+  const [importingBooks, setImportingBooks] = useState(false)
+  const bookInputRef = useRef<HTMLInputElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const effectiveCourse = courseId || state.courses[0]?.id || ''
@@ -36,6 +41,12 @@ export function StudyScreen() {
       .filter((m) => m.channel === 'STUDY' && m.courseId === effectiveCourse)
       .sort((a, b) => a.timestampMillis - b.timestampMillis),
   [state.chat, effectiveCourse])
+
+  const courseDocs = useMemo(() =>
+    state.documents
+      .filter((d) => d.courseId === effectiveCourse)
+      .sort((a, b) => b.lastAccessedMillis - a.lastAccessedMillis),
+  [state.documents, effectiveCourse])
 
   const windowMessages = courseChat.filter((m) => m.timestampMillis >= studyChatWindowStart)
 
@@ -83,8 +94,35 @@ export function StudyScreen() {
 
   const cards = state.flashcards.filter((f) => f.courseId === effectiveCourse)
 
+  // Import course books (PDF/EPUB/TXT/MD) into the selected course.
+  const importFiles = async (e: ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    e.target.value = ''
+    if (!files || files.length === 0 || !effectiveCourse) return
+    setImportingBooks(true)
+    const added: DocumentItem[] = []
+    for (const file of Array.from(files)) {
+      try {
+        added.push(await importBook(effectiveCourse, file))
+      } catch {
+        /* unreadable file — skip it */
+      }
+    }
+    if (added.length > 0) update((s) => ({ ...s, documents: [...s.documents, ...added] }))
+    setImportingBooks(false)
+  }
+
+  const removeDoc = (d: DocumentItem) => {
+    void deleteBookFile(d.id)
+    update((s) => ({ ...s, documents: s.documents.filter((x) => x.id !== d.id) }))
+  }
+
   if (flashMode) {
     return <FlashcardReview cards={cards} courseName={courseLabel(state, effectiveCourse)} onBack={() => setFlashMode(false)} />
+  }
+
+  if (readingDoc) {
+    return <BookReader doc={readingDoc} onBack={() => setReadingDoc(null)} />
   }
 
   return (
@@ -193,6 +231,48 @@ export function StudyScreen() {
                 <button className="btn primary" onClick={() => setFlashMode(true)}>Review</button>
               )}
             </div>
+          </Card>
+
+          <Card
+            title={`Books (${courseDocs.length})`}
+            icon={<IconBook width={16} height={16} />}
+          >
+            {courseDocs.length === 0 && (
+              <Empty>No books for this course yet. Import PDF, EPUB, TXT or MD files.</Empty>
+            )}
+            {courseDocs.map((d) => (
+              <div className="row-item" key={d.id}>
+                <div className="row-main" onClick={() => setReadingDoc(d)} style={{ cursor: 'pointer' }}>
+                  <div className="row-title">{d.title}</div>
+                  <div className="row-sub">{d.format} · {d.readingProgressPercent}% read</div>
+                  <div style={{ height: 4, marginTop: 6, borderRadius: 2, background: 'var(--border)', overflow: 'hidden' }}>
+                    <div style={{ width: `${d.readingProgressPercent}%`, height: '100%', background: 'var(--accent-strong)' }} />
+                  </div>
+                </div>
+                <button
+                  className="icon-btn"
+                  aria-label="Delete book"
+                  onClick={() => {
+                    if (confirm(`Delete "${d.title}"? Its original file is removed from this device too.`)) removeDoc(d)
+                  }}
+                >
+                  <IconTrash width={16} height={16} />
+                </button>
+              </div>
+            ))}
+            <div className="btn-row">
+              <button className="btn" onClick={() => bookInputRef.current?.click()} disabled={importingBooks}>
+                <IconAdd width={15} height={15} /> {importingBooks ? 'Importing…' : 'Import books'}
+              </button>
+            </div>
+            <input
+              ref={bookInputRef}
+              type="file"
+              accept=".pdf,.epub,.txt,.md,.markdown,application/pdf,application/epub+zip,text/plain,text/markdown"
+              multiple
+              hidden
+              onChange={(e) => void importFiles(e)}
+            />
           </Card>
 
           <CourseAdder onAdded={() => {}} />
