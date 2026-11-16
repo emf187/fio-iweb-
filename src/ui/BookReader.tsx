@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import type { Book as EpubBook, Rendition as EpubRendition } from 'epubjs'
 import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist'
 import { update } from '../lib/store'
@@ -92,7 +92,7 @@ export function BookReader({ doc, onBack }: { doc: DocumentItem; onBack: () => v
 
   let body: ReactNode
   if (doc.format === 'PDF' && bytes) {
-    body = <PdfReader doc={doc} bytes={bytes} onProgress={saveProgress} />
+    body = <PdfReader doc={doc} bytes={bytes} onProgress={saveProgress} onBack={onBack} />
   } else if (doc.format === 'EPUB' && bytes) {
     body = <EpubReader doc={doc} bytes={bytes} onProgress={saveProgress} />
   } else {
@@ -134,9 +134,15 @@ function ReaderHeader({ doc, onBack, percent }: { doc: DocumentItem; onBack: () 
   )
 }
 
-// ---------------------------------------------------------------- PDF (pdf.js)
+// ------------------------------------------------- PDF (pdf.js, full screen)
 
-function PdfReader({ doc, bytes, onProgress }: { doc: DocumentItem; bytes: Blob; onProgress: Progress }) {
+/**
+ * The PDF reader takes over the whole screen: a slim bar on top (back + title +
+ * page), the page filling everything in between, controls pinned at the bottom.
+ * A fixed inset-0 overlay is used instead of the Fullscreen API so it works on
+ * iPhone Safari too, which doesn't allow element.requestFullscreen.
+ */
+function PdfReader({ doc, bytes, onProgress, onBack }: { doc: DocumentItem; bytes: Blob; onProgress: Progress; onBack: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null)
   const [numPages, setNumPages] = useState(0)
@@ -177,7 +183,7 @@ function PdfReader({ doc, bytes, onProgress }: { doc: DocumentItem; bytes: Blob;
       const pdfPage = await pdf.getPage(current)
       if (!alive || !canvas.isConnected) return
       const scaleOne = pdfPage.getViewport({ scale: 1 })
-      const availW = Math.max(200, (canvas.parentElement?.clientWidth ?? 340) - 4)
+      const availW = Math.max(200, (canvas.parentElement?.clientWidth ?? 340) - 12)
       const scale = Math.min(availW / scaleOne.width, 2.5)
       const dpr = Math.min(2, window.devicePixelRatio || 1)
       const viewport = pdfPage.getViewport({ scale: scale * dpr })
@@ -208,34 +214,72 @@ function PdfReader({ doc, bytes, onProgress }: { doc: DocumentItem; bytes: Blob;
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  const overlay: CSSProperties = {
+    position: 'fixed', inset: 0, zIndex: 55, background: 'var(--background)',
+    display: 'flex', flexDirection: 'column'
+  }
+
+  const topBar = (status: string) => (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
+      padding: 'calc(10px + env(safe-area-inset-top)) 12px 8px',
+      borderBottom: '1px solid var(--border)'
+    }}>
+      <button className="icon-btn" onClick={onBack} aria-label="Back to course">
+        <IconBack width={18} height={18} />
+      </button>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="row-title" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {doc.title}
+        </div>
+        <div className="row-sub">{status}</div>
+      </div>
+    </div>
+  )
+
   if (failed) {
-    return <Empty>This PDF couldn't be opened in the browser. Try re-importing the file.</Empty>
+    return (
+      <div style={overlay}>
+        {topBar('Couldn\u2019t open this PDF')}
+        <div style={{ flex: 1, display: 'grid', placeItems: 'center', padding: 24 }}>
+          <Empty>This PDF couldn't be opened in the browser. Try re-importing the file.</Empty>
+        </div>
+      </div>
+    )
   }
 
   const clamped = numPages === 0 ? Math.max(1, page) : Math.min(Math.max(1, page), numPages)
+  const percent = numPages === 0 ? 0 : Math.round((clamped / numPages) * 100)
 
   return (
-    <>
+    <div style={overlay}>
+      {topBar(numPages === 0 ? 'Opening…' : `Page ${clamped} of ${numPages}`)}
       <div style={{
-        height: '58dvh', display: 'flex', justifyContent: 'center', alignItems: 'flex-start',
-        overflowY: 'auto', background: 'var(--elevated)', borderRadius: 14, padding: 6
+        flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex',
+        justifyContent: 'center', alignItems: 'flex-start',
+        background: 'var(--elevated)', padding: 6
       }}>
         <canvas ref={canvasRef} style={{ display: 'block', borderRadius: 6, background: '#fff' }} />
       </div>
-      <div className="btn-row" style={{ marginTop: 10, alignItems: 'center' }}>
-        <button className="btn" disabled={clamped <= 1} onClick={() => setPage(clamped - 1)}>‹ Prev</button>
-        <input
-          type="range" min={1} max={Math.max(1, numPages)} value={clamped}
-          onChange={(e) => setPage(Number(e.target.value))}
-          style={{ flex: 1, accentColor: 'var(--accent)' }}
-          aria-label="Page"
-        />
-        <button className="btn" disabled={numPages === 0 || clamped >= numPages} onClick={() => setPage(clamped + 1)}>Next ›</button>
+      <div style={{
+        flexShrink: 0, padding: '8px 12px calc(10px + env(safe-area-inset-bottom))',
+        borderTop: '1px solid var(--border)'
+      }}>
+        <div className="btn-row" style={{ marginTop: 0, alignItems: 'center' }}>
+          <button className="btn" disabled={clamped <= 1} onClick={() => setPage(clamped - 1)}>‹ Prev</button>
+          <input
+            type="range" min={1} max={Math.max(1, numPages)} value={clamped}
+            onChange={(e) => setPage(Number(e.target.value))}
+            style={{ flex: 1, accentColor: 'var(--accent)' }}
+            aria-label="Page"
+          />
+          <button className="btn" disabled={numPages === 0 || clamped >= numPages} onClick={() => setPage(clamped + 1)}>Next ›</button>
+        </div>
+        <div className="row-sub" style={{ textAlign: 'center', marginTop: 4 }}>
+          {numPages === 0 ? '' : `${percent}% · arrow keys work too`}
+        </div>
       </div>
-      <div className="row-sub" style={{ textAlign: 'center', marginTop: 6 }}>
-        {numPages === 0 ? 'Opening…' : `Page ${clamped} of ${numPages} · ${Math.round((clamped / numPages) * 100)}% · arrow keys work too`}
-      </div>
-    </>
+    </div>
   )
 }
 
