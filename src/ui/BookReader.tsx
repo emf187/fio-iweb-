@@ -4,8 +4,8 @@ import type { Book as EpubBook, Rendition as EpubRendition } from 'epubjs'
 import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist'
 import { update } from '../lib/store'
 import type { DocumentItem } from '../lib/types'
-import { pdfWorkerUrl } from '../lib/docs'
-import { getDoc } from '../lib/db'
+import { detectFormat, extractText, pdfWorkerUrl, type BookFormat } from '../lib/docs'
+import { getDoc, putDoc } from '../lib/db'
 import { Empty, Markdown } from './components'
 import { IconBack } from './icons'
 
@@ -15,7 +15,9 @@ import { IconBack } from './icons'
  * TXT/MD is a scroll view. Progress saves back to the DocumentItem exactly like
  * Android: readingProgressPercent + lastReadPosition (PDF: zero-based page,
  * EPUB: ‰, TXT/MD: 0-100). Books restored from a backup come without the
- * original file — those fall back to the extracted text.
+ * original file — those fall back to the extracted text, and the missing-file
+ * notice offers re-attaching the file onto the same book (progress and
+ * highlights survive).
  */
 
 type Progress = (lastReadPosition: number, percent: number) => void
@@ -23,6 +25,7 @@ type Progress = (lastReadPosition: number, percent: number) => void
 export function BookReader({ doc, onBack }: { doc: DocumentItem; onBack: () => void }) {
   const [bytes, setBytes] = useState<Blob | null>(null)
   const [loaded, setLoaded] = useState(false)
+  const [attachNote, setAttachNote] = useState('')
 
   useEffect(() => {
     let alive = true
@@ -45,6 +48,36 @@ export function BookReader({ doc, onBack }: { doc: DocumentItem; onBack: () => v
     }))
   }, [doc.id])
 
+  /**
+   * Restores the original file onto this existing book — for one that arrived
+   * from a backup without it. Nothing else changes: id, reading progress and
+   * highlights stay; only the bytes come back (and text if the backup had none).
+   */
+  const attachFile = useCallback(async (file: File) => {
+    const picked = detectFormat(file.name, file.type)
+    if (picked !== doc.format) {
+      setAttachNote(`That file is a ${picked} — this book needs its original .${doc.format.toLowerCase()} file`)
+      return
+    }
+    try {
+      // Fill in extracted text when the backup carried none, so AI keeps working.
+      if (!doc.content?.trim()) {
+        const text = await extractText(doc.format as BookFormat, new Uint8Array(await file.arrayBuffer()))
+        if (text) {
+          update((s) => ({
+            ...s,
+            documents: s.documents.map((d) => d.id === doc.id ? { ...d, content: text } : d)
+          }))
+        }
+      }
+      await putDoc(doc.id, file)
+      setBytes(file)
+      setAttachNote('')
+    } catch {
+      setAttachNote('Could not store that file — try again')
+    }
+  }, [doc.id, doc.format, doc.content])
+
   if (!loaded) {
     return (
       <div className="screen">
@@ -55,6 +88,7 @@ export function BookReader({ doc, onBack }: { doc: DocumentItem; onBack: () => v
   }
 
   const missingFile = !bytes && (doc.format === 'PDF' || doc.format === 'EPUB')
+  const canAttach = missingFile || (!bytes && doc.content !== undefined && !doc.content.trim())
 
   let body: ReactNode
   if (doc.format === 'PDF' && bytes) {
@@ -62,7 +96,15 @@ export function BookReader({ doc, onBack }: { doc: DocumentItem; onBack: () => v
   } else if (doc.format === 'EPUB' && bytes) {
     body = <EpubReader doc={doc} bytes={bytes} onProgress={saveProgress} />
   } else {
-    body = <TextReader doc={doc} onProgress={saveProgress} missingFile={missingFile} />
+    body = (
+      <TextReader
+        doc={doc}
+        onProgress={saveProgress}
+        missingFile={missingFile}
+        onAttach={canAttach ? attachFile : undefined}
+        attachNote={attachNote}
+      />
+    )
   }
 
   return (
@@ -288,7 +330,26 @@ function EpubReader({ doc, bytes, onProgress }: { doc: DocumentItem; bytes: Blob
 
 // ------------------------------------------------------ TXT / MD (+ fallbacks)
 
-function TextReader({ doc, onProgress, missingFile }: { doc: DocumentItem; onProgress: Progress; missingFile: boolean }) {
+const ACCEPT_FOR: Record<string, string> = {
+  PDF: '.pdf',
+  EPUB: '.epub',
+  MD: '.md,.markdown,.txt',
+  TXT: '.txt,.md'
+}
+
+function TextReader({
+  doc,
+  onProgress,
+  missingFile,
+  onAttach,
+  attachNote
+}: {
+  doc: DocumentItem
+  onProgress: Progress
+  missingFile: boolean
+  onAttach?: (file: File) => void
+  attachNote: string
+}) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const lastSaved = useRef(doc.lastReadPosition)
   const content = doc.content ?? ''
@@ -317,14 +378,38 @@ function TextReader({ doc, onProgress, missingFile }: { doc: DocumentItem; onPro
     }
   }
 
+  const showNotice = missingFile || (!content.trim() && onAttach)
+
   return (
     <>
-      {missingFile && (
+      {showNotice && (
         <div style={{ marginBottom: 8 }}>
           <Empty>
-            The original {doc.format} file isn't on this device — books restored from a backup come
-            without the file. Showing the extracted text instead; re-import the file to get the full reader back.
+            {missingFile
+              ? <>The original {doc.format} file isn't on this device — books restored from a backup come
+                without the file. Showing the extracted text instead; attach the file below to get the
+                full reader back (progress and highlights are kept).</>
+              : <>No readable text was extracted from this file — attach the original file to fill
+                this book in.</>}
           </Empty>
+          {onAttach && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
+              <label className="btn" style={{ cursor: 'pointer' }}>
+                Attach the original .{doc.format.toLowerCase()} file
+                <input
+                  type="file"
+                  accept={ACCEPT_FOR[doc.format] ?? ''}
+                  hidden
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) onAttach(file)
+                    e.currentTarget.value = ''
+                  }}
+                />
+              </label>
+              {attachNote && <div className="row-sub" style={{ color: 'var(--warning, #d33)' }}>{attachNote}</div>}
+            </div>
+          )}
         </div>
       )}
       <div
@@ -338,7 +423,7 @@ function TextReader({ doc, onProgress, missingFile }: { doc: DocumentItem; onPro
         {content ? (
           doc.format === 'MD' ? <Markdown text={content} /> : <div style={{ whiteSpace: 'pre-wrap' }}>{content}</div>
         ) : (
-          <Empty>No readable text was extracted from this file.</Empty>
+          !showNotice && <Empty>No readable text was extracted from this file.</Empty>
         )}
       </div>
       <div className="row-sub" style={{ textAlign: 'center', marginTop: 6 }}>{doc.readingProgressPercent}% read</div>
