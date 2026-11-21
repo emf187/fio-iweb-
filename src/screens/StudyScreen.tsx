@@ -3,6 +3,7 @@ import { useFio, update } from '../lib/store'
 import { uid, type ChatMessage, type DocumentItem, type Flashcard } from '../lib/types'
 import { sendPrompt } from '../lib/ai'
 import { importBook, deleteBookFile } from '../lib/docs'
+import { getDoc } from '../lib/db'
 import { Badge, Card, Empty, Markdown, Modal, ScreenHeader, TextField } from '../ui/components'
 import { IconAdd, IconBook, IconSend, IconTrash } from '../ui/icons'
 import { BookReader } from '../ui/BookReader'
@@ -32,6 +33,7 @@ export function StudyScreen() {
   const [readingDoc, setReadingDoc] = useState<DocumentItem | null>(null)
   const [importingBooks, setImportingBooks] = useState(false)
   const [bookNote, setBookNote] = useState('')
+  const [missingFiles, setMissingFiles] = useState<Set<string>>(new Set())
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const effectiveCourse = courseId || state.courses[0]?.id || ''
@@ -49,6 +51,23 @@ export function StudyScreen() {
   [state.documents, effectiveCourse])
 
   const windowMessages = courseChat.filter((m) => m.timestampMillis >= studyChatWindowStart)
+
+  // Which books still have their original PDF/EPUB on this device. Books
+  // restored from a JSON backup only carry extracted text — show them as
+  // "Text only" so they are not mistaken for corrupted files. Re-checked when
+  // the reader closes, since attaching a file happens inside it.
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      const missing = new Set<string>()
+      for (const d of courseDocs) {
+        if (d.format !== 'PDF' && d.format !== 'EPUB') continue
+        if (!(await getDoc(d.id))) missing.add(d.id)
+      }
+      if (alive) setMissingFiles(missing)
+    })()
+    return () => { alive = false }
+  }, [courseDocs, readingDoc])
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
@@ -248,8 +267,14 @@ export function StudyScreen() {
             {courseDocs.map((d) => (
               <div className="row-item" key={d.id}>
                 <div className="row-main" onClick={() => setReadingDoc(d)} style={{ cursor: 'pointer' }}>
-                  <div className="row-title">{d.title}</div>
-                  <div className="row-sub">{d.format} · {d.readingProgressPercent}% read</div>
+                  <div className="row-title" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    {d.title}
+                    {missingFiles.has(d.id) && <Badge tone="warning">Text only</Badge>}
+                  </div>
+                  <div className="row-sub">
+                    {d.format} · {d.readingProgressPercent}% read
+                    {missingFiles.has(d.id) ? ' · original file missing — open to attach it' : ''}
+                  </div>
                   <div style={{ height: 4, marginTop: 6, borderRadius: 2, background: 'var(--border)', overflow: 'hidden' }}>
                     <div style={{ width: `${d.readingProgressPercent}%`, height: '100%', background: 'var(--accent-strong)' }} />
                   </div>
